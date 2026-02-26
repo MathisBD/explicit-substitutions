@@ -6,8 +6,7 @@ type term =
 
 module type ESubst = sig
   (** The type of substitutions, i.e. functions from indices to terms. If [s] is a
-      substitution, we write [s i] for the application of [s] to an index [i : int], and
-      [s t] for the application of [s] to a term [t : term].
+      substitution we write [s i] for the application of [s] to an index [i : int].
 
       Substitutions are in fact _finite_ functions: we write [s : n --> m] to indicate
       that [s] maps indices in the range [0..n-1] to terms which have free indices in the
@@ -22,12 +21,15 @@ module type ESubst = sig
       [Var i]. *)
   val id : subst
 
-  (** [shift k : n --> n + k] is the substitution on [n] variables which shifts every
-      index by [k]: it maps [i] to [Var (i + k)]. *)
+  (** [shift : n --> n + k] is the substitution on [n] variables which shifts every index
+      by [k]: it maps [i] to [Var (i + k)]. *)
   val shift : int -> subst
 
   (** Given a substitution [s : n --> m] and a term [t], [cons t s : n + 1 --> m] is a
-      substitution which maps [0] to [t] and [i + 1] to [s i]. *)
+      substitution which maps [0] to [t] and [i + 1] to [s i].
+
+      [cons] is typically used to implement beta reduction: [App (Lam body, arg)]
+      beta-reduces to [substitute (cons arg id) body]. *)
   val cons : term -> subst -> subst
 
   (** Given a substitution [s : n --> m], [skip k s : n --> m + k] is the composition of
@@ -37,7 +39,10 @@ module type ESubst = sig
   (** Given a substitution [s : n --> m], [up k s : n + k --> m + k] is a substitution
       which lifts [s] under [k] binders. It maps:
       - [i] to [i] if [i < k].
-      - [i] to [weaken k (s (i - k))] if [i >= k]. *)
+      - [i] to [weaken k (s (i - k))] if [i >= k].
+
+      [up] is typically used when pushing a substitution under binders:
+      [substitute s (Lam t) = Lam (substitute (up 1 s) t)]. *)
   val up : int -> subst -> subst
 end
 
@@ -55,27 +60,48 @@ module Substitute (S : ESubst) = struct
     | Lam t -> Lam (substitute (S.up 1 s) t)
 
   (** [reduce t] applies weak head beta-reduction to the term [t]. *)
-  let rec reduce (t : term) : term =
+  (*let rec reduce (t : term) : term =
     match t with
     | App (t, u) -> begin
         match reduce t with
         | Lam body -> reduce (substitute (S.cons u S.id) body)
         | _ -> App (t, u)
       end
-    | _ -> t
+    | _ -> t*)
 end
 
-(** [weaken_rec depth ofs t] adds [ofs] to every index greater or equal to [depth] in [t].
-*)
-let rec weaken_rec (depth : int) (ofs : int) (t : term) : term =
+(** [weaken_rec depth k t] adds [k] to every index greater or equal to [depth] in [t]. *)
+let rec weaken_rec (depth : int) (k : int) (t : term) : term =
   match t with
-  | Var i -> if i < depth then Var i else Var (i + ofs)
-  | App (t, u) -> App (weaken_rec depth ofs t, weaken_rec depth ofs u)
-  | Lam t -> Lam (weaken_rec (depth + 1) ofs t)
+  | Var i -> if i < depth then Var i else Var (i + k)
+  | App (t, u) -> App (weaken_rec depth k t, weaken_rec depth k u)
+  | Lam t -> Lam (weaken_rec (depth + 1) k t)
 
-(** [weaken ofs t] adds [ofs] to every index in [t]. *)
-let weaken (ofs : int) (t : term) : term = weaken_rec 0 ofs t
+(** [weaken k t] adds [k] to every index in [t]. *)
+let weaken (k : int) (t : term) : term = weaken_rec 0 k t
 
+(** This implementation is very simple. The operations which build substitutions (e.g.
+    [id], [cons]) are very efficient because all they do is build a closure, which takes
+    constant time. However applying a substitution to an index is very expensive, due to
+    two reasons:
+
+    First, [skip] and [up] aren't smart about applying weakening. For instance applying
+    [skip k1 (skip k2 s)] to the index [0] will result in [weaken k1 (weaken k2 (s 0))],
+    which will traverse [s 0] twice. More sophisticated implementations can avoid
+    weakening several times the same term.
+
+    Second, building a closure using operations such as [cons], [skip], etc builds a
+    linked list structure in memory, and applying the closure needs to walk the entire
+    linked list in the worst case. This issue is quite subtle: the time needed to apply a
+    substitution [s : n --> m] doesn't depend on [n] or [m], but rather depends on the
+    number of operations [k] which were used to build the substitution.
+
+    In general [k] may be smaller or larger than the number [n] of variables in the
+    substitution's domain, and can grow arbitrarily large even for a fixed [n]. Take for
+    instance the substitution obtained by iterating [skip 1] [k] times starting with the
+    identity: [skip 1 (skip 1 (skip 1 ...)) : n --> n + k]. Applying this substitution
+    takes time O(k), whereas applying the equivalent substitution [shift k] takes time
+    O(1). *)
 module ClosureSubst : ESubst = struct
   type subst = int -> term
 
@@ -86,11 +112,6 @@ module ClosureSubst : ESubst = struct
   let up k s : subst = fun i -> if i < k then Var i else weaken k (s (i - k))
   let skip k s : subst = fun i -> weaken k (s i)
 end
-
-(** [range n] builds the list [0; 1; ...; n-1]. *)
-let range (n : int) : int list =
-  let rec loop i acc = if i <= 0 then acc else loop (i - 1) ((i - 1) :: acc) in
-  loop n []
 
 (** With this implementation:
     - [apply] is O(n).
