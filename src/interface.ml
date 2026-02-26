@@ -125,6 +125,31 @@ module ListSubst : ESubst = struct
   let up k0 s : subst = cons_vars k0 (skip k0 s)
 end
 
+(** With skewed lists we can improve the running time of [apply] from O(n) to O(log n)
+    while keeping the same complexity for the other operations.
+
+    # Primer on skewed lists
+
+    The basic idea of skewed lists is to represent a list not as a sequence of elements,
+    but rather as a sequence of complete binary trees of elements:
+    {[
+      type 'a tree = Leaf of 'a | Node of 'a * 'a tree * 'a tree
+      type 'a skewed_list = Nil | Cons of 'a tree * 'a skewed_list
+    ]}
+
+    A skewed list represents the sequence of elements obtained by flattening each tree
+    ([flatten (Leaf a) = [a]] and
+    [flatten (Node (x, t1, t2)) = x :: flatten t1 @ flatten t2]) and concatenating the
+    results.
+
+    In a skewed list [Cons (t1, Cons (t2, Cons (t3, ...)))] we maintain the invariant that
+    the trees [t1], [t2], [t3], etc are complete binary trees of increasing heights, and
+    at most the first two trees can have the same height.
+
+    # Substitutions using skewed lists
+
+    To implement substitutions using skewed lists we additionally store a shift at each
+    node in the tree (including leafs). *)
 module SkewedSubst = struct
   type tree =
     | Leaf of { k : int; t : term }
@@ -143,9 +168,9 @@ module SkewedSubst = struct
               total_shift (Node (k, t, s1, s2, _)) = k + total_shift s1 + total_shift s2
             ]}
             The purpose of [k_tot] is purely to avoid recomputing [total_shift] all the
-            time when applying a substitution to an index. *)
+            time. *)
 
-  (** We encode a substitution as a spine of trees.
+  (** We encode a substitution as a list of trees.
       - [Nil k] represents the substitution [shift k]. In particular [Nil 0] is the
         identity.
       - [Cons n t s] represents the substitution [cons t s], where [t] is a complete
@@ -153,10 +178,11 @@ module SkewedSubst = struct
         [t]. Note that a [Cons] node doesn't need to contain a shift, because the tree
         itself [t] can contain shifts.
 
-      Additionally, we maintain the invariant that the spine of a substitution contains
-      trees of (non-strictly) increasing height, and at most the first two trees have the
-      same height. This invariant ensures that the length of the spine of the substitution
-      is logarithmic in the number of terms in the substitution. *)
+      Additionally, we maintain the invariant that in a substitution
+      [Cons (_, t1, Cons (_, t2, Cons (_, t3, ...)))] the trees [t1], [t2], [t3], etc have
+      increasing heights, and at most the first two trees can have the same height. This
+      invariant ensures that the number of [Cons] nodes in a substitution is logarithmic
+      in the number of terms in the substitution. *)
   type subst = Nil of int | Cons of int * tree * subst
 
   (** [total_shift tr] returns the value of the total shift stored in the tree [tr].
