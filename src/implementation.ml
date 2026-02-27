@@ -176,19 +176,20 @@ module SkewedSubst = struct
     | Leaf of { k : int; t : term }
         (** [Leaf k t] represents the substitution [skip k (cons t id)]. *)
     | Node of { k : int; k_tot : int; t : term; left : tree; right : tree }
-        (** [Node (k, k_tot, t, s1, s2, )] represents the substitution
+        (** [Node (k, k_tot, t, s1, s2)] represents the substitution
             [skip k (cons t (app s1 s2))] where [app] is the n-ary version of [cons] and
             is defined as you would expect.
 
             [k_tot] is equal to the total shift stored in the tree, which can be defined
             as follows:
             {[
-              total_shift (Leaf (k, _)) = k
+              total_offset (Leaf (k, _)) = k
             ]}
             {[
-              total_shift (Node (k, t, s1, s2, _)) = k + total_shift s1 + total_shift s2
+              total_offset (Node (k, t, s1, s2, _))
+              = k + total_offset s1 + total_offset s2
             ]}
-            The purpose of [k_tot] is purely to avoid recomputing [total_shift] all the
+            The purpose of [k_tot] is purely to avoid recomputing [total_offset] all the
             time. *)
 
   (** We encode a substitution as a list of trees.
@@ -206,9 +207,9 @@ module SkewedSubst = struct
       in the number of terms in the substitution. *)
   type subst = Nil of int | Cons of int * tree * subst
 
-  (** [total_shift tr] returns the value of the total shift stored in the tree [tr].
+  (** [total_offset tr] returns the value of the total shift stored in the tree [tr].
       Thanks to the use of [k_tot] this function is O(1). *)
-  let total_shift (tr : tree) : int =
+  let total_offset (tr : tree) : int =
     match tr with Leaf { k } -> k | Node { k_tot } -> k_tot
 
   (** [leaf t] builds a leaf with a shift [k = 0]. *)
@@ -216,7 +217,7 @@ module SkewedSubst = struct
 
   (** [node t left right] builds a leaf with a shift [k = 0]. *)
   let node (t : term) (left : tree) (right : tree) : tree =
-    Node { k = 0; k_tot = total_shift left + total_shift right; t; left; right }
+    Node { k = 0; k_tot = total_offset left + total_offset right; t; left; right }
 
   let rec apply_tree (acc : int) (n : int) (tr : tree) (i : int) : term =
     match tr with
@@ -226,13 +227,13 @@ module SkewedSubst = struct
         then weaken (acc + k) t
         else if i <= n / 2
         then apply_tree (acc + k) (n / 2) left (i - 1)
-        else apply_tree (acc + k + total_shift left) (n / 2) right (i - 1 - (n / 2))
+        else apply_tree (acc + k + total_offset left) (n / 2) right (i - 1 - (n / 2))
 
   let rec apply_rec (acc : int) s i : term =
     match s with
     | Nil k -> Var (i + k + acc)
     | Cons (n, t, s) ->
-        if i < n then apply_tree acc n t i else apply_rec (acc + total_shift t) s (i - n)
+        if i < n then apply_tree acc n t i else apply_rec (acc + total_offset t) s (i - n)
 
   let apply s i : term = apply_rec 0 s i
   let id : subst = Nil 0
