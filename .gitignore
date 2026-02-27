@@ -32,4 +32,8 @@ setup.log
 # Local OPAM switch
 _opam/
 
+# Testing directories
+_input/
+_output/
+
 # End of https://www.toptal.com/developers/gitignore/api/ocaml
