@@ -33,7 +33,7 @@ setup.log
 _opam/
 
 # Testing directories
-_input/
-_output/
+input/
+output/
 
 # End of https://www.toptal.com/developers/gitignore/api/ocaml

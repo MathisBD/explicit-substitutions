@@ -1,2 +1,4 @@
-(library
- (public_name substitutions))
+(executable
+ (public_name substitutions)
+ (name main)
+ (libraries monolith))
