@@ -21,8 +21,8 @@ module type ESubst = sig
       [Var i]. *)
   val id : subst
 
-  (** [shift : n --> n + k] is the substitution on [n] variables which shifts every index
-      by [k]: it maps [i] to [Var (i + k)]. *)
+  (** [shift k : n --> n + k] is the substitution on [n] variables which shifts every
+      index by [k]: it maps [i] to [Var (i + k)]. *)
   val shift : int -> subst
 
   (** Given a substitution [s : n --> m] and a term [t], [cons t s : n + 1 --> m] is a
@@ -38,7 +38,7 @@ module type ESubst = sig
 
   (** Given a substitution [s : n --> m], [up k s : n + k --> m + k] is a substitution
       which lifts [s] under [k] binders. It maps:
-      - [i] to [i] if [i < k].
+      - [i] to [Var i] if [i < k].
       - [i] to [weaken k (s (i - k))] if [i >= k].
 
       [up] is typically used when pushing a substitution under binders:
@@ -141,9 +141,9 @@ module ListSubst : ESubst = struct
     match s with Nil k -> Nil (k0 + k) | Cons (k, t, s) -> Cons (k0 + k, t, s)
 
   let rec cons_vars (n : int) (s : subst) : subst =
-    if n <= 0 then s else cons_vars (n - 1) (Cons (0, Var (n - 1), s))
+    if n <= 0 then s else cons_vars (n - 1) (cons (Var (n - 1)) s)
 
-  let up k0 s : subst = cons_vars k0 (skip k0 s)
+  let up k s : subst = cons_vars k (skip k s)
 end
 
 (** With skewed lists we can improve the running time of [apply] from O(n) to O(log n)
